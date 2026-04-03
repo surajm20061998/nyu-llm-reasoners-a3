@@ -33,42 +33,41 @@ def tokenize_prompt_and_output(
     if pad_token_id is None:
         raise ValueError("Tokenizer must have either pad_token_id or eos_token_id")
 
-    examples = []
+    full_input_ids = []
+    full_response_masks = []
+
     for prompt_ids, output_ids in zip(
         prompt_tokenized["input_ids"],
         output_tokenized["input_ids"],
     ):
-        full_ids = list(prompt_ids) + list(output_ids)
-        if len(full_ids) < 2:
-            raise ValueError("Each prompt+output pair must contain at least 2 tokens total")
+        prompt_ids = list(prompt_ids)
+        output_ids = list(output_ids)
 
-        input_ids = full_ids[:-1]
-        labels = full_ids[1:]
+        full_ids = prompt_ids + output_ids
+        full_mask = [False] * len(prompt_ids) + [True] * len(output_ids)
 
-        prompt_len = len(prompt_ids)
-        response_mask = [(i + 1) >= prompt_len for i in range(len(full_ids) - 1)]
+        full_input_ids.append(full_ids)
+        full_response_masks.append(full_mask)
 
-        examples.append((input_ids, labels, response_mask))
+    max_full_len = max(len(x) for x in full_input_ids)
 
-    max_seq_len = max(len(input_ids) for input_ids, _, _ in examples)
+    padded_full_input_ids = []
+    padded_full_response_masks = []
 
-    batch_input_ids = []
-    batch_labels = []
-    batch_response_mask = []
+    for full_ids, full_mask in zip(full_input_ids, full_response_masks):
+        pad_len = max_full_len - len(full_ids)
 
-    for input_ids, labels, response_mask in examples:
-        pad_len = max_seq_len - len(input_ids)
+        padded_full_input_ids.append(full_ids + [pad_token_id] * pad_len)
+        padded_full_response_masks.append(full_mask + [False] * pad_len)
 
-        batch_input_ids.append(input_ids + [pad_token_id] * pad_len)
-        batch_labels.append(labels + [pad_token_id] * pad_len)
-        batch_response_mask.append(response_mask + [False] * pad_len)
+    padded_full_input_ids = torch.tensor(padded_full_input_ids, dtype=torch.long)
+    padded_full_response_masks = torch.tensor(padded_full_response_masks, dtype=torch.bool)
 
     return {
-        "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
-        "labels": torch.tensor(batch_labels, dtype=torch.long),
-        "response_mask": torch.tensor(batch_response_mask, dtype=torch.bool),
+        "input_ids": padded_full_input_ids[:, :-1],
+        "labels": padded_full_input_ids[:, 1:],
+        "response_mask": padded_full_response_masks[:, 1:],
     }
-
 
 
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
