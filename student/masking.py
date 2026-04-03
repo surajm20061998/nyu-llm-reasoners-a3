@@ -15,4 +15,10 @@ def masked_normalize(
     dim: int | None = None,
     normalize_constant: float = 1.0,
 ) -> torch.Tensor:
-    raise NotImplementedError
+    mask = mask.to(tensor.dtype)
+    masked_tensor = tensor * mask
+
+    if dim is None:
+        return masked_tensor.sum() / normalize_constant
+
+    return masked_tensor.sum(dim=dim) / normalize_constant

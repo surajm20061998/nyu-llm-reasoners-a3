@@ -71,7 +71,10 @@ def tokenize_prompt_and_output(
 
 
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    log_probs = F.log_softmax(logits, dim=-1)
+    probs = log_probs.exp()
+    return -(probs * log_probs).sum(dim=-1)
+
 
 
 def get_response_log_probs(
@@ -80,7 +83,21 @@ def get_response_log_probs(
     labels: torch.Tensor,
     return_token_entropy: bool,
 ) -> dict[str, torch.Tensor]:
-    raise NotImplementedError
+    logits = model(input_ids=input_ids).logits
+    log_probs_all = F.log_softmax(logits, dim=-1)
+
+    log_probs = log_probs_all.gather(
+        dim=-1,
+        index=labels.unsqueeze(-1),
+    ).squeeze(-1)
+
+    output = {"log_probs": log_probs}
+
+    if return_token_entropy:
+        output["token_entropy"] = compute_entropy(logits)
+
+    return output
+
 
 
 def sft_microbatch_train_step(
@@ -89,4 +106,22 @@ def sft_microbatch_train_step(
     gradient_accumulation_steps: int,
     normalize_constant: int | None = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    raise NotImplementedError
+    if normalize_constant is None:
+        normalize_constant = 1.0
+
+    per_example_log_prob_sums = masked_normalize(
+        tensor=policy_log_probs,
+        mask=response_mask,
+        dim=-1,
+        normalize_constant=normalize_constant,
+    )
+
+    loss = -per_example_log_prob_sums.mean()
+    loss = loss / gradient_accumulation_steps
+    loss.backward()
+
+    metadata = {
+        "num_response_tokens": response_mask.sum(),
+        "mean_response_log_prob": per_example_log_prob_sums.mean().detach(),
+    }
+    return loss, metadata
