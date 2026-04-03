@@ -8,6 +8,31 @@ from torch import Tensor
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 
+from student.grpo import (
+    compute_group_normalized_rewards as _compute_group_normalized_rewards,
+    compute_grpo_clip_loss as _compute_grpo_clip_loss,
+    compute_naive_policy_gradient_loss as _compute_naive_policy_gradient_loss,
+    compute_policy_gradient_loss as _compute_policy_gradient_loss,
+    grpo_microbatch_train_step as _grpo_microbatch_train_step,
+)
+from student.masking import (
+    masked_mean as _masked_mean,
+    masked_normalize as _masked_normalize,
+)
+from student.optional import (
+    compute_per_instance_dpo_loss as _compute_per_instance_dpo_loss,
+    get_packed_sft_dataset as _get_packed_sft_dataset,
+    iterate_batches as _iterate_batches,
+    parse_gsm8k_response as _parse_gsm8k_response,
+    parse_mmlu_response as _parse_mmlu_response,
+)
+from student.sft import (
+    compute_entropy as _compute_entropy,
+    get_response_log_probs as _get_response_log_probs,
+    sft_microbatch_train_step as _sft_microbatch_train_step,
+    tokenize_prompt_and_output as _tokenize_prompt_and_output,
+)
+
 
 def run_tokenize_prompt_and_output(
     prompt_strs: list[str],
@@ -31,7 +56,8 @@ def run_tokenize_prompt_and_output(
             "response_mask": torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1):
                 a mask on the response tokens in `labels`.
     """
-    raise NotImplementedError
+    return _tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    #raise NotImplementedError
 
 
 def run_compute_group_normalized_rewards(
