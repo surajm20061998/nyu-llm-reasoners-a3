@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$SCRIPT_DIR"
+cd "$REPO_ROOT"
+
 OUT="/scratch/$USER/sft_runs"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -15,10 +19,11 @@ for SIZE in "${SIZES[@]}"; do
 
   echo "========================================"
   echo "Starting run for SIZE=$SIZE"
+  echo "Repo root: $REPO_ROOT"
   echo "Output dir: $OUT/$SIZE"
   echo "========================================"
 
-  CUDA_VISIBLE_DEVICES=0,1 uv run python run_sft.py \
+  CUDA_VISIBLE_DEVICES=0,1 uv run python student/run_sft.py \
     --output-dir "$OUT/$SIZE" \
     --run-name "sft_$SIZE" \
     --train-size "$TRAIN_SIZE" \
