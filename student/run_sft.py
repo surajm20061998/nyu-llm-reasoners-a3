@@ -432,7 +432,7 @@ def main() -> None:
 
             raw_loss = loss.detach().cpu().item() * accum_target
             mean_response_log_prob = compute_masked_average(policy_log_probs, response_mask)
-            mean_token_entropy = compute_masked_average(token_entropy, response_mask)
+            mean_token_entropy = float("nan")
             num_response_tokens = int(response_mask.sum().detach().cpu().item())
 
             if accum_counter == accum_target:
