@@ -418,10 +418,10 @@ def main() -> None:
                 model=policy,
                 input_ids=input_ids,
                 labels=labels,
-                return_token_entropy=True,
+                return_token_entropy=False,
             )
             policy_log_probs = outputs["log_probs"]
-            token_entropy = outputs["token_entropy"]
+            mean_token_entropy = float("nan")
 
             loss, _ = sft_microbatch_train_step(
                 policy_log_probs=policy_log_probs,
