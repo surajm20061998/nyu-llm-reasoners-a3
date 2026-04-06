@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_ROOT"
 
 OUT="/scratch/$USER/sft_runs"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -23,6 +23,10 @@ for SIZE in "${SIZES[@]}"; do
   echo "========================================"
 
   CUDA_VISIBLE_DEVICES=0,1 uv run python "$REPO_ROOT/student/run_sft.py" \
+    --prompt-path "$REPO_ROOT/student/prompts/intellect.prompt" \
+    --intellect-train-path "$REPO_ROOT/data-distrib/intellect_math/train" \
+    --intellect-dev-path "$REPO_ROOT/data-distrib/intellect_math/dev" \
+    --intellect-test-path "$REPO_ROOT/data-distrib/intellect_math/test" \
     --output-dir "$OUT/$SIZE" \
     --run-name "sft_$SIZE" \
     --train-size "$TRAIN_SIZE" \
