@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -17,6 +18,16 @@ try:
     import wandb
 except Exception:
     wandb = None
+    
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+
+
+def resolve_repo_path(path: str | Path) -> Path:
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return (REPO_ROOT / p).resolve()
 
 from student.drgrpo_grader import question_only_reward_fn
 from student.sft import (
@@ -29,9 +40,15 @@ from student.sft import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", default="Qwen/Qwen2.5-Math-1.5B")
-    parser.add_argument("--prompt-path", default="student/prompts/intellect.prompt")
+    parser.add_argument(
+    "--prompt-path",
+    default=str(SCRIPT_DIR / "prompts" / "intellect.prompt"),
+)
 
-    parser.add_argument("--intellect-train-path", default="data-distrib/intellect_math/train")
+    parser.add_argument(
+    "--intellect-train-path",
+    default=str(REPO_ROOT / "data-distrib" / "intellect_math" / "train"),
+)
     parser.add_argument("--intellect-dev-path", default="data-distrib/intellect_math/dev")
     parser.add_argument("--intellect-test-path", default="data-distrib/intellect_math/test")
 
