@@ -4,7 +4,6 @@ import random
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -41,16 +40,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", default="Qwen/Qwen2.5-Math-1.5B")
     parser.add_argument(
-    "--prompt-path",
-    default=str(SCRIPT_DIR / "prompts" / "intellect.prompt"),
-)
+        "--prompt-path",
+        default=str(SCRIPT_DIR / "prompts" / "intellect.prompt"),
+    )
 
     parser.add_argument(
-    "--intellect-train-path",
-    default=str(REPO_ROOT / "data-distrib" / "intellect_math" / "train"),
-)
-    parser.add_argument("--intellect-dev-path", default="data-distrib/intellect_math/dev")
-    parser.add_argument("--intellect-test-path", default="data-distrib/intellect_math/test")
+        "--intellect-train-path",
+        default=str(REPO_ROOT / "data-distrib" / "intellect_math" / "train"),
+    )
+    parser.add_argument(
+        "--intellect-dev-path",
+        default=str(REPO_ROOT / "data-distrib" / "intellect_math" / "dev"),
+    )
+    parser.add_argument(
+        "--intellect-test-path",
+        default=str(REPO_ROOT / "data-distrib" / "intellect_math" / "test"),
+    )
 
     parser.add_argument("--train-size", type=int, default=-1)
     parser.add_argument("--num-epochs", type=int, default=200)
@@ -67,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-every", type=int, default=100)
 
     parser.add_argument("--intellect-val-max-examples", type=int, default=500)
-    parser.add_argument("--math-val-split", default="test[:500]")
+    parser.add_argument("--math-val-split", default="train[-500:]")
     parser.add_argument("--math-test-split", default="test")
     parser.add_argument("--math-val-max-examples", type=int, default=500)
     parser.add_argument("--math-test-max-examples", type=int, default=500)
@@ -114,7 +119,7 @@ def append_jsonl(path: Path, obj: dict[str, Any]) -> None:
         f.write(json.dumps(obj) + "\n")
 
 
-def load_prompt(path: str) -> str:
+def load_prompt(path: str | Path) -> str:
     return Path(path).read_text()
 
 
@@ -172,8 +177,8 @@ def format_intellect_example(ex: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def load_intellect_split(path: str, size: int | None, seed: int, shuffle: bool) -> Dataset:
-    ds = load_from_disk(path)
+def load_intellect_split(path: str | Path, size: int | None, seed: int, shuffle: bool) -> Dataset:
+    ds = load_from_disk(str(path))
     if shuffle:
         ds = ds.shuffle(seed=seed)
     if size is not None and size > 0:
@@ -196,8 +201,8 @@ def make_sft_collate_fn(tokenizer):
     return collate_fn
 
 
-def prepare_intellect_eval(path: str) -> tuple[list[str], list[str]]:
-    ds = load_from_disk(path)
+def prepare_intellect_eval(path: str | Path) -> tuple[list[str], list[str]]:
+    ds = load_from_disk(str(path))
     prompts, gts = [], []
     for ex in ds:
         formatted = format_intellect_example(ex)
@@ -308,8 +313,13 @@ def main() -> None:
     config = vars(args).copy()
     save_json(output_dir / "config.json", config)
 
+    prompt_path = resolve_repo_path(args.prompt_path)
+    intellect_train_path = resolve_repo_path(args.intellect_train_path)
+    intellect_dev_path = resolve_repo_path(args.intellect_dev_path)
+    intellect_test_path = resolve_repo_path(args.intellect_test_path)
+
     tokenizer = init_tokenizer(args.model_id)
-    policy = init_policy(args.model_id, args.policy-device if False else args.policy_device, args.gradient_checkpointing)
+    policy = init_policy(args.model_id, args.policy_device, args.gradient_checkpointing)
     llm = init_vllm(
         model_id=args.model_id,
         device=args.vllm_device,
@@ -324,10 +334,10 @@ def main() -> None:
     )
     optimizer.zero_grad(set_to_none=True)
 
-    prompt_template = load_prompt(args.prompt_path)
+    prompt_template = load_prompt(prompt_path)
 
     train_size = None if args.train_size <= 0 else args.train_size
-    train_ds = load_intellect_split(args.intellect_train_path, train_size, args.seed, shuffle=True)
+    train_ds = load_intellect_split(intellect_train_path, train_size, args.seed, shuffle=True)
     train_examples = build_sft_examples(train_ds)
 
     train_loader = DataLoader(
@@ -339,8 +349,8 @@ def main() -> None:
         collate_fn=make_sft_collate_fn(tokenizer),
     )
 
-    intellect_dev_prompts, intellect_dev_gts = prepare_intellect_eval(args.intellect_dev_path)
-    intellect_test_prompts, intellect_test_gts = prepare_intellect_eval(args.intellect_test_path)
+    intellect_dev_prompts, intellect_dev_gts = prepare_intellect_eval(intellect_dev_path)
+    intellect_test_prompts, intellect_test_gts = prepare_intellect_eval(intellect_test_path)
     math_val_prompts, math_val_gts = prepare_math_eval(args.math_val_split, prompt_template)
     math_test_prompts, math_test_gts = prepare_math_eval(args.math_test_split, prompt_template)
 

@@ -27,6 +27,11 @@ for SIZE in "${SIZES[@]}"; do
     --intellect-train-path "$REPO_ROOT/data-distrib/intellect_math/train" \
     --intellect-dev-path "$REPO_ROOT/data-distrib/intellect_math/dev" \
     --intellect-test-path "$REPO_ROOT/data-distrib/intellect_math/test" \
+    --math-val-split "train[-500:]" \
+    --math-test-split "test" \
+    --intellect-val-max-examples 500 \
+    --math-val-max-examples 500 \
+    --math-test-max-examples 500 \
     --output-dir "$OUT/$SIZE" \
     --run-name "sft_$SIZE" \
     --train-size "$TRAIN_SIZE" \
