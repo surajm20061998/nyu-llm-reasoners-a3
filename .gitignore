@@ -160,6 +160,7 @@ cython_debug/
 #.idea/
 
 .ruff_cache/
+.hf-cache/
 *.zip
 .DS_Store
 /data-distrib 

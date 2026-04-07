@@ -103,7 +103,15 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    return _compute_group_normalized_rewards(
+        reward_fn,
+        rollout_responses,
+        repeated_ground_truths,
+        group_size,
+        advantage_eps,
+        normalize_by_std,
+    )
+    #raise NotImplementedError
 
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
@@ -162,7 +170,8 @@ def run_compute_naive_policy_gradient_loss(
         torch.Tensor of shape (batch_size, sequence_length): 
             the policy gradient per-token loss.
     """
-    raise NotImplementedError
+    return _compute_naive_policy_gradient_loss(raw_rewards_or_advantages, policy_log_probs)
+    #raise NotImplementedError
 
 
 def run_compute_grpo_clip_loss(
@@ -189,7 +198,8 @@ def run_compute_grpo_clip_loss(
             dict[str, torch.Tensor]: metadata for the GRPO-Clip loss 
                 (used to compute clip fraction).
     """
-    raise NotImplementedError
+    return _compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
+    #raise NotImplementedError
 
 
 def run_compute_policy_gradient_loss(
@@ -203,7 +213,8 @@ def run_compute_policy_gradient_loss(
     """
     Wrapper that delegates to the appropriate policy gradient loss function above.
     """
-    raise NotImplementedError
+    return _compute_policy_gradient_loss(policy_log_probs, loss_type, raw_rewards, advantages, old_log_probs, cliprange)
+    #raise NotImplementedError
 
 
 def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = None) -> torch.Tensor:
@@ -222,7 +233,8 @@ def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = 
         torch.Tensor, the mean of the tensor along the specified
             dimension, considering only the elements with mask value 1.
     """
-    raise NotImplementedError
+    return _masked_mean(tensor, mask, dim)
+    #raise NotImplementedError
 
 def run_sft_microbatch_train_step(
     policy_log_probs: torch.Tensor,
@@ -278,7 +290,8 @@ def run_grpo_microbatch_train_step(
         tuple[torch.Tensor, dict[str, torch.Tensor]]: 
             the policy gradient loss and its metadata.
     """
-    raise NotImplementedError
+    return _grpo_microbatch_train_step(policy_log_probs,response_mask,gradient_accumulation_steps,loss_type,raw_rewards,advantages,old_log_probs, cliprange)
+    #raise NotImplementedError
 
 
 def run_masked_normalize(
@@ -341,7 +354,8 @@ def get_packed_sft_dataset(
         "input_ids" contains the token IDs for the language modeling inputs, and "labels" contains
         the token IDs for the language modeling labels.
     """
-    raise NotImplementedError
+    return _get_packed_sft_dataset(tokenizer, dataset_path, seq_length, shuffle)
+    #raise NotImplementedError
 
 
 def run_iterate_batches(
@@ -364,7 +378,8 @@ def run_iterate_batches(
     Returns:
         Iterable over batches, where each batch has size `batch_size`.
     """
-    raise NotImplementedError
+    return _iterate_batches(dataset, batch_size, shuffle)
+    #raise NotImplementedError
 
 
 def run_parse_mmlu_response(
@@ -390,7 +405,8 @@ def run_parse_mmlu_response(
         str (one of "A", "B", "C", or "D") if the model output can be parsed into a prediction,
         else None.
     """
-    raise NotImplementedError
+    return _parse_mmlu_response(mmlu_example, model_output)
+    #raise NotImplementedError
 
 
 def run_parse_gsm8k_response(
@@ -407,7 +423,8 @@ def run_parse_gsm8k_response(
         str with the predicted numeric answer if the model output can be parsed into a prediction,
         else None.
     """
-    raise NotImplementedError
+    return _parse_gsm8k_response(model_output)
+    #raise NotImplementedError
 
 
 def run_compute_per_instance_dpo_loss(
@@ -442,4 +459,13 @@ def run_compute_per_instance_dpo_loss(
     Returns:
         torch.Tensor with the DPO loss for this example.
     """
-    raise NotImplementedError
+    return _compute_per_instance_dpo_loss(
+        lm,
+        lm_ref,
+        tokenizer,
+        beta,
+        prompt,
+        response_chosen,
+        response_rejected,
+    )
+    #raise NotImplementedError

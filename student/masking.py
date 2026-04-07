@@ -6,7 +6,13 @@ def masked_mean(
     mask: torch.Tensor,
     dim: int | None = None,
 ) -> torch.Tensor:
-    raise NotImplementedError
+    mask = mask.to(tensor.dtype)
+    masked_tensor = tensor * mask
+
+    if dim is None:
+        return masked_tensor.sum() / mask.sum()
+
+    return masked_tensor.sum(dim=dim) / mask.sum(dim=dim)
 
 
 def masked_normalize(
