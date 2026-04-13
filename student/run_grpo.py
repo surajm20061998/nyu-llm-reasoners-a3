@@ -213,12 +213,44 @@ def maybe_log_wandb(run, metrics: dict[str, Any]) -> None:
         run.log(metrics)
 
 
-def get_output_text(vllm_output) -> str:
+def make_sampling_params(
+    *,
+    temperature: float,
+    max_tokens: int,
+    stop_sequence: str | None,
+    top_p: float = 1.0,
+    min_tokens: int = 0,
+):
+    kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "min_tokens": min_tokens,
+        "max_tokens": max_tokens,
+    }
+    if stop_sequence:
+        kwargs["stop"] = [stop_sequence]
+        # Countdown grading expects the closing tag to remain in the text.
+        kwargs["include_stop_str_in_output"] = True
+    try:
+        return SamplingParams(**kwargs)
+    except TypeError:
+        kwargs.pop("include_stop_str_in_output", None)
+        return SamplingParams(**kwargs)
+
+
+def get_output_text(vllm_output, stop_sequence: str | None = None) -> str:
     if not getattr(vllm_output, "outputs", None):
         return ""
     if len(vllm_output.outputs) == 0:
         return ""
-    return vllm_output.outputs[0].text
+    output = vllm_output.outputs[0]
+    text = output.text
+    if stop_sequence and stop_sequence not in text:
+        finish_reason = getattr(output, "finish_reason", None)
+        stop_reason = getattr(output, "stop_reason", None)
+        if finish_reason == "stop" and stop_reason == stop_sequence:
+            text = text + stop_sequence
+    return text
 
 
 def evaluate_countdown(
@@ -236,10 +268,10 @@ def evaluate_countdown(
 
     outputs = llm.generate(
         prompts,
-        SamplingParams(
+        make_sampling_params(
             temperature=0.0,
             max_tokens=max_new_tokens,
-            stop=[stop_sequence] if stop_sequence else None,
+            stop_sequence=stop_sequence,
         ),
     )
 
@@ -247,7 +279,7 @@ def evaluate_countdown(
     format_rewards = []
     answer_rewards = []
     for output, ground_truth in zip(outputs, ground_truths):
-        reward = countdown_reward_fn(get_output_text(output), ground_truth)
+        reward = countdown_reward_fn(get_output_text(output, stop_sequence), ground_truth)
         rewards.append(reward["reward"])
         format_rewards.append(reward["format_reward"])
         answer_rewards.append(reward["answer_reward"])
@@ -480,15 +512,17 @@ def main() -> None:
 
         rollout_outputs = llm.generate(
             repeated_prompts,
-            SamplingParams(
+            make_sampling_params(
                 temperature=args.rollout_temperature,
                 top_p=args.rollout_top_p,
                 min_tokens=args.rollout_min_tokens,
                 max_tokens=args.max_new_tokens,
-                stop=[args.stop_sequence] if args.stop_sequence else None,
+                stop_sequence=args.stop_sequence,
             ),
         )
-        rollout_responses = [get_output_text(output) for output in rollout_outputs]
+        rollout_responses = [
+            get_output_text(output, args.stop_sequence) for output in rollout_outputs
+        ]
 
         advantages, raw_rewards, reward_metadata = compute_group_normalized_rewards(
             reward_fn=countdown_reward_fn,
