@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_ROOT"
 
-OUT="/scratch/$USER/grpo_runs/offpolicy"
+OUT="/scratch/$USER/grpo_runs/onpolicy"
 
 CUDA_VISIBLE_DEVICES=0,1 uv run python "$REPO_ROOT/student/run_grpo.py" \
   --prompt-path "$REPO_ROOT/student/prompts/countdown.prompt" \
@@ -12,20 +12,20 @@ CUDA_VISIBLE_DEVICES=0,1 uv run python "$REPO_ROOT/student/run_grpo.py" \
   --countdown-dev-path "$REPO_ROOT/data-distrib/countdown/dev.parquet" \
   --countdown-test-path "$REPO_ROOT/data-distrib/countdown/test.parquet" \
   --output-dir "$OUT" \
-  --run-name "grpo_offpolicy_countdown" \
-  --num-rollout-steps 100 \
-  --rollout-batch-size 64 \
-  --group-size 4 \
-  --epochs-per-rollout-batch 4 \
+  --run-name "grpo_onpolicy_countdown" \
+  --num-rollout-steps 200 \
+  --rollout-batch-size 16 \
+  --group-size 8 \
+  --epochs-per-rollout-batch 1 \
   --train-batch-size 16 \
   --microbatch-size 1 \
-  --learning-rate 1e-6 \
-  --loss-type grpo_clip \
-  --cliprange 0.1 \
-  --rollout-temperature 1.0 \
+  --learning-rate 1e-5 \
+  --loss-type reinforce_with_baseline \
+  --cliprange 0.2 \
+  --rollout-temperature 0.7 \
   --rollout-min-tokens 4 \
-  --max-new-tokens 256 \
-  --eval-every 10 \
+  --max-new-tokens 1024 \
+  --eval-every 5 \
   --countdown-dev-max-examples 256 \
   --countdown-test-max-examples 1024 \
   --policy-device cuda:0 \

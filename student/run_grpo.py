@@ -60,25 +60,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--run-name", default=None)
 
-    parser.add_argument("--num-rollout-steps", type=int, default=100)
-    parser.add_argument("--rollout-batch-size", type=int, default=64)
-    parser.add_argument("--group-size", type=int, default=4)
-    parser.add_argument("--epochs-per-rollout-batch", type=int, default=4)
+    parser.add_argument("--num-rollout-steps", type=int, default=200)
+    parser.add_argument("--rollout-batch-size", type=int, default=16)
+    parser.add_argument("--group-size", type=int, default=8)
+    parser.add_argument("--epochs-per-rollout-batch", type=int, default=1)
     parser.add_argument("--train-batch-size", type=int, default=16)
     parser.add_argument("--microbatch-size", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=1e-6)
+    parser.add_argument("--learning-rate", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
-    parser.add_argument("--cliprange", type=float, default=0.1)
+    parser.add_argument("--cliprange", type=float, default=0.2)
     parser.add_argument("--advantage-eps", type=float, default=1e-6)
-    parser.add_argument("--normalize-by-std", action="store_true")
+    parser.add_argument(
+        "--loss-type",
+        default="reinforce_with_baseline",
+        choices=["no_baseline", "reinforce_with_baseline", "grpo_clip"],
+    )
+    parser.add_argument("--normalize-by-std", dest="normalize_by_std", action="store_true")
+    parser.add_argument("--no-normalize-by-std", dest="normalize_by_std", action="store_false")
+    parser.set_defaults(normalize_by_std=True)
 
-    parser.add_argument("--rollout-temperature", type=float, default=1.0)
+    parser.add_argument("--rollout-temperature", type=float, default=0.7)
     parser.add_argument("--rollout-top-p", type=float, default=1.0)
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--rollout-min-tokens", type=int, default=4)
+    parser.add_argument("--max-new-tokens", type=int, default=1024)
+    parser.add_argument("--stop-sequence", default="</answer>")
     parser.add_argument("--old-logprob-batch-size", type=int, default=8)
+    parser.add_argument("--num-rollout-examples-to-log", type=int, default=3)
 
-    parser.add_argument("--eval-every", type=int, default=10)
+    parser.add_argument("--eval-every", type=int, default=5)
     parser.add_argument("--eval-before-train", action="store_true")
     parser.add_argument("--countdown-dev-max-examples", type=int, default=256)
     parser.add_argument("--countdown-test-max-examples", type=int, default=1024)
@@ -195,6 +205,7 @@ def evaluate_countdown(
     prompts: list[str],
     ground_truths: list[dict[str, Any]],
     max_new_tokens: int,
+    stop_sequence: str | None,
     max_examples: int | None = None,
     prefix: str = "eval",
 ) -> dict[str, float]:
@@ -204,7 +215,11 @@ def evaluate_countdown(
 
     outputs = llm.generate(
         prompts,
-        SamplingParams(temperature=0.0, max_tokens=max_new_tokens),
+        SamplingParams(
+            temperature=0.0,
+            max_tokens=max_new_tokens,
+            stop=[stop_sequence] if stop_sequence else None,
+        ),
     )
 
     rewards = []
@@ -245,6 +260,31 @@ def sample_rollout_examples(
     return prompts, ground_truths
 
 
+def build_rollout_examples(
+    repeated_prompts: list[str],
+    repeated_ground_truths: list[dict[str, Any]],
+    rollout_responses: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    examples = []
+    for idx, (prompt, ground_truth, response) in enumerate(
+        zip(repeated_prompts, repeated_ground_truths, rollout_responses)
+    ):
+        if idx >= limit:
+            break
+        reward = countdown_reward_fn(response, ground_truth)
+        examples.append(
+            {
+                "index": idx,
+                "prompt": prompt,
+                "response": response,
+                "ground_truth": ground_truth,
+                "reward": reward,
+            }
+        )
+    return examples
+
+
 def score_old_log_probs(
     policy,
     input_ids: torch.Tensor,
@@ -272,6 +312,10 @@ def main() -> None:
         raise ValueError("rollout_batch_size must be divisible by group_size")
     if args.train_batch_size <= 0 or args.microbatch_size <= 0:
         raise ValueError("train_batch_size and microbatch_size must be positive")
+    if args.train_batch_size % args.microbatch_size != 0:
+        raise ValueError("train_batch_size must be divisible by microbatch_size")
+    if args.loss_type == "grpo_clip" and args.epochs_per_rollout_batch < 1:
+        raise ValueError("epochs_per_rollout_batch must be positive")
 
     set_seed(args.seed)
     rng = random.Random(args.seed)
@@ -349,6 +393,7 @@ def main() -> None:
             dev_prompts,
             dev_ground_truths,
             max_new_tokens=args.max_new_tokens,
+            stop_sequence=args.stop_sequence,
             max_examples=None,
             prefix="countdown_dev",
         )
@@ -417,7 +462,9 @@ def main() -> None:
             SamplingParams(
                 temperature=args.rollout_temperature,
                 top_p=args.rollout_top_p,
+                min_tokens=args.rollout_min_tokens,
                 max_tokens=args.max_new_tokens,
+                stop=[args.stop_sequence] if args.stop_sequence else None,
             ),
         )
         rollout_responses = [get_output_text(output) for output in rollout_outputs]
@@ -432,17 +479,20 @@ def main() -> None:
         )
 
         tokenized = tokenize_prompt_and_output(repeated_prompts, rollout_responses, tokenizer)
-        old_log_probs = score_old_log_probs(
-            policy=policy,
-            input_ids=tokenized["input_ids"],
-            labels=tokenized["labels"],
-            batch_size=args.old_logprob_batch_size,
-            device=args.policy_device,
-        )
+        old_log_probs = None
+        if args.loss_type == "grpo_clip":
+            old_log_probs = score_old_log_probs(
+                policy=policy,
+                input_ids=tokenized["input_ids"],
+                labels=tokenized["labels"],
+                batch_size=args.old_logprob_batch_size,
+                device=args.policy_device,
+            )
 
         rollout_record = {
             "rollout_step": rollout_step,
             "train_step": train_step,
+            "rollout/loss_type": args.loss_type,
             "rollout/reward_mean": reward_metadata["reward_mean"],
             "rollout/reward_std": reward_metadata["reward_std"],
             "rollout/reward_min": reward_metadata["reward_min"],
@@ -454,6 +504,18 @@ def main() -> None:
         }
         append_jsonl(output_dir / "rollout_history.jsonl", rollout_record)
         maybe_log_wandb(run, {"rollout_step": rollout_step, **rollout_record})
+        append_jsonl(
+            output_dir / "rollout_examples.jsonl",
+            {
+                "rollout_step": rollout_step,
+                "examples": build_rollout_examples(
+                    repeated_prompts,
+                    repeated_ground_truths,
+                    rollout_responses,
+                    args.num_rollout_examples_to_log,
+                ),
+            },
+        )
 
         policy.train()
         num_examples = tokenized["input_ids"].shape[0]
@@ -484,11 +546,15 @@ def main() -> None:
                         policy_log_probs=current_log_probs,
                         response_mask=current_response_mask,
                         gradient_accumulation_steps=len(microbatches),
-                        loss_type="grpo_clip",
+                        loss_type=args.loss_type,
                         raw_rewards=raw_rewards[micro_indices].unsqueeze(-1).to(args.policy_device),
                         advantages=advantages[micro_indices].unsqueeze(-1).to(args.policy_device),
-                        old_log_probs=old_log_probs[micro_indices].to(args.policy_device),
-                        cliprange=args.cliprange,
+                        old_log_probs=(
+                            old_log_probs[micro_indices].to(args.policy_device)
+                            if old_log_probs is not None
+                            else None
+                        ),
+                        cliprange=args.cliprange if args.loss_type == "grpo_clip" else None,
                     )
 
                     micro_loss_total += float(loss.detach().cpu().item())
@@ -505,6 +571,7 @@ def main() -> None:
                     "epoch_within_rollout": epoch_idx + 1,
                     "train_step": train_step,
                     "train/loss": micro_loss_total,
+                    "train/loss_type": args.loss_type,
                     "train/lr": optimizer.param_groups[0]["lr"],
                     "train/grad_norm": float(grad_norm.detach().cpu().item()) if torch.is_tensor(grad_norm) else float(grad_norm),
                     "train/clipfrac": float(sum(clipfrac_values) / len(clipfrac_values)) if clipfrac_values else 0.0,
@@ -544,6 +611,7 @@ def main() -> None:
         test_prompts,
         test_ground_truths,
         max_new_tokens=args.max_new_tokens,
+        stop_sequence=args.stop_sequence,
         max_examples=None,
         prefix="countdown_test",
     )
