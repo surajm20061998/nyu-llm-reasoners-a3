@@ -142,8 +142,29 @@ def init_policy(model_id: str, device: str, gradient_checkpointing: bool):
     return policy
 
 
+def ensure_pynvml_compat() -> None:
+    try:
+        import pynvml  # type: ignore
+    except Exception:
+        return
+
+    if hasattr(pynvml, "nvmlDeviceGetCudaComputeCapability"):
+        return
+
+    def _compat_nvml_device_get_cuda_compute_capability(handle):
+        try:
+            device_index = pynvml.nvmlDeviceGetIndex(handle)
+        except Exception:
+            device_index = torch.cuda.current_device()
+        major, minor = torch.cuda.get_device_capability(device_index)
+        return int(major), int(minor)
+
+    pynvml.nvmlDeviceGetCudaComputeCapability = _compat_nvml_device_get_cuda_compute_capability
+
+
 def init_vllm(model_id: str, device: str, seed: int, gpu_memory_utilization: float = 0.85):
     vllm_set_random_seed(seed)
+    ensure_pynvml_compat()
     world_size_patch = patch("torch.distributed.get_world_size", return_value=1)
     profiling_patch = patch(
         "vllm.worker.worker.Worker._assert_memory_footprint_increased_during_profiling",
