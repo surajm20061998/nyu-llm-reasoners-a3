@@ -431,11 +431,12 @@ def main() -> None:
     run = maybe_init_wandb(args, config)
     best_dev_accuracy = -float("inf")
     best_checkpoint_path = None
+    last_dev_metrics: dict[str, float] | None = None
     train_step = 0
     eval_step = 0
 
     def run_eval(tag: str, rollout_step: int) -> dict[str, float]:
-        nonlocal eval_step, best_dev_accuracy, best_checkpoint_path
+        nonlocal eval_step, best_dev_accuracy, best_checkpoint_path, last_dev_metrics
 
         policy.eval()
         torch.cuda.empty_cache()
@@ -471,6 +472,7 @@ def main() -> None:
         )
 
         dev_accuracy = metrics["countdown_dev_accuracy"]
+        last_dev_metrics = metrics
         if dev_accuracy > best_dev_accuracy:
             best_dev_accuracy = dev_accuracy
             best_checkpoint_path = str(best_dir)
@@ -677,6 +679,18 @@ def main() -> None:
             "best_dev_accuracy": best_dev_accuracy,
             "train_steps_completed": train_step,
             "rollout_steps_completed": args.num_rollout_steps,
+            "final_dev_accuracy": (
+                last_dev_metrics["countdown_dev_accuracy"] if last_dev_metrics is not None else None
+            ),
+            "final_dev_format_rate": (
+                last_dev_metrics["countdown_dev_format_rate"] if last_dev_metrics is not None else None
+            ),
+            "final_dev_answer_rate": (
+                last_dev_metrics["countdown_dev_answer_rate"] if last_dev_metrics is not None else None
+            ),
+            "final_dev_num_examples": (
+                last_dev_metrics["countdown_dev_num_examples"] if last_dev_metrics is not None else None
+            ),
             **final_metrics,
         },
     )
