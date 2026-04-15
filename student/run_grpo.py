@@ -79,6 +79,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--normalize-by-std", dest="normalize_by_std", action="store_true")
     parser.add_argument("--no-normalize-by-std", dest="normalize_by_std", action="store_false")
     parser.set_defaults(normalize_by_std=True)
+    parser.add_argument(
+        "--length-normalization",
+        default="masked_mean",
+        choices=["masked_mean", "masked_normalize"],
+    )
 
     parser.add_argument("--rollout-temperature", type=float, default=0.7)
     parser.add_argument("--rollout-top-p", type=float, default=1.0)
@@ -550,6 +555,8 @@ def main() -> None:
             "rollout_step": rollout_step,
             "train_step": train_step,
             "rollout/loss_type": args.loss_type,
+            "rollout/length_normalization": args.length_normalization,
+            "rollout/normalize_by_std": bool(args.normalize_by_std),
             "rollout/reward_mean": reward_metadata["reward_mean"],
             "rollout/reward_std": reward_metadata["reward_std"],
             "rollout/reward_min": reward_metadata["reward_min"],
@@ -612,6 +619,7 @@ def main() -> None:
                             else None
                         ),
                         cliprange=args.cliprange if args.loss_type == "grpo_clip" else None,
+                        length_normalization=args.length_normalization,
                     )
 
                     micro_loss_total += float(loss.detach().cpu().item())
@@ -629,6 +637,8 @@ def main() -> None:
                     "train_step": train_step,
                     "train/loss": micro_loss_total,
                     "train/loss_type": args.loss_type,
+                    "train/length_normalization": args.length_normalization,
+                    "train/normalize_by_std": bool(args.normalize_by_std),
                     "train/lr": optimizer.param_groups[0]["lr"],
                     "train/grad_norm": float(grad_norm.detach().cpu().item()) if torch.is_tensor(grad_norm) else float(grad_norm),
                     "train/clipfrac": float(sum(clipfrac_values) / len(clipfrac_values)) if clipfrac_values else 0.0,
@@ -637,6 +647,10 @@ def main() -> None:
                     "train/advantage_mean": float(advantages.mean().item()),
                     "train/advantage_std": float(advantages.std().item()),
                 }
+                if "normalize_constant" in metadata:
+                    train_record["train/normalize_constant"] = float(
+                        metadata["normalize_constant"].detach().cpu().item()
+                    )
                 append_jsonl(output_dir / "train_history.jsonl", train_record)
                 maybe_log_wandb(run, {"train_step": train_step, **train_record})
 

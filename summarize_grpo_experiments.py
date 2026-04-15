@@ -10,7 +10,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--group-by",
         default="learning_rate",
-        choices=["learning_rate", "loss_type", "run_name"],
+        choices=[
+            "learning_rate",
+            "loss_type",
+            "length_normalization",
+            "std_normalization",
+            "run_name",
+        ],
     )
     parser.add_argument(
         "--metric",
@@ -53,6 +59,10 @@ def format_label(config: dict[str, Any], run_dir: Path, group_by: str) -> str:
         return f"lr={value:g}" if isinstance(value, (int, float)) else run_dir.name
     if group_by == "loss_type":
         return str(config.get("loss_type", run_dir.name))
+    if group_by == "length_normalization":
+        return str(config.get("length_normalization", run_dir.name))
+    if group_by == "std_normalization":
+        return f"std_norm={bool(config.get('normalize_by_std', True))}"
     if group_by == "run_name":
         return str(config.get("run_name") or run_dir.name)
     return run_dir.name
@@ -94,6 +104,8 @@ def summarize_run(run_dir: Path, group_by: str, metric: str) -> dict[str, Any]:
         "status": "completed" if summary_path.exists() else "incomplete",
         "learning_rate": config.get("learning_rate"),
         "loss_type": config.get("loss_type"),
+        "length_normalization": config.get("length_normalization"),
+        "normalize_by_std": config.get("normalize_by_std"),
         "best_dev_accuracy": summary.get("best_dev_accuracy", best_metric),
         "final_dev_accuracy": summary.get("final_dev_accuracy", final_metric),
         "final_dev_format_rate": summary.get("final_dev_format_rate"),
@@ -116,6 +128,8 @@ def write_tsv(path: Path, rows: list[dict[str, Any]]) -> None:
         "status",
         "learning_rate",
         "loss_type",
+        "length_normalization",
+        "normalize_by_std",
         "best_dev_accuracy",
         "final_dev_accuracy",
         "final_dev_format_rate",

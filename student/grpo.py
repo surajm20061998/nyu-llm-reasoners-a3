@@ -2,7 +2,7 @@ from typing import Callable, Literal
 
 import torch
 
-from .masking import masked_mean
+from .masking import masked_mean, masked_normalize
 
 
 def compute_group_normalized_rewards(
@@ -147,6 +147,8 @@ def grpo_microbatch_train_step(
     advantages: torch.Tensor | None = None,
     old_log_probs: torch.Tensor | None = None,
     cliprange: float | None = None,
+    length_normalization: Literal["masked_mean", "masked_normalize"] = "masked_mean",
+    normalize_constant: float | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     per_token_loss, metadata = compute_policy_gradient_loss(
         policy_log_probs=policy_log_probs,
@@ -157,11 +159,23 @@ def grpo_microbatch_train_step(
         cliprange=cliprange,
     )
 
-    per_example_loss = masked_mean(
-        tensor=per_token_loss,
-        mask=response_mask,
-        dim=-1,
-    )
+    if length_normalization == "masked_mean":
+        per_example_loss = masked_mean(
+            tensor=per_token_loss,
+            mask=response_mask,
+            dim=-1,
+        )
+    elif length_normalization == "masked_normalize":
+        if normalize_constant is None:
+            normalize_constant = float(response_mask.sum(dim=-1).max().item())
+        per_example_loss = masked_normalize(
+            tensor=per_token_loss,
+            mask=response_mask,
+            dim=-1,
+            normalize_constant=normalize_constant,
+        )
+    else:
+        raise ValueError(f"Unknown length_normalization: {length_normalization}")
 
     loss = per_example_loss.mean()
     loss = loss / gradient_accumulation_steps
@@ -170,5 +184,10 @@ def grpo_microbatch_train_step(
     metadata = dict(metadata)
     metadata["per_example_loss"] = per_example_loss.detach()
     metadata["mean_loss"] = loss.detach()
+    if normalize_constant is not None:
+        metadata["normalize_constant"] = torch.tensor(
+            normalize_constant,
+            device=policy_log_probs.device,
+            dtype=policy_log_probs.dtype,
+        ).detach()
     return loss, metadata
-
