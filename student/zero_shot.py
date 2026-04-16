@@ -3,6 +3,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
@@ -91,6 +92,26 @@ def save_jsonl(path: Path, records: list[dict]) -> None:
     with path.open("w") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def ensure_pynvml_compat() -> None:
+    try:
+        import pynvml  # type: ignore
+    except Exception:
+        return
+
+    if hasattr(pynvml, "nvmlDeviceGetCudaComputeCapability"):
+        return
+
+    def _compat_nvml_device_get_cuda_compute_capability(handle):
+        try:
+            device_index = pynvml.nvmlDeviceGetIndex(handle)
+        except Exception:
+            device_index = torch.cuda.current_device()
+        major, minor = torch.cuda.get_device_capability(device_index)
+        return int(major), int(minor)
+
+    pynvml.nvmlDeviceGetCudaComputeCapability = _compat_nvml_device_get_cuda_compute_capability
             
             
 def main():
@@ -119,6 +140,7 @@ def main():
     print(f"Loaded {len(prompts)} examples from split={args.split}")
 
     print("Initializing vLLM...")
+    ensure_pynvml_compat()
     llm = LLM(
         model=args.model,
         trust_remote_code=True,

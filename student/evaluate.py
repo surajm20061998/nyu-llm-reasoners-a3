@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import torch
 from datasets import load_dataset, load_from_disk
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
@@ -28,6 +29,26 @@ def evaluate(llm, prompts, ground_truths):
     return correct / len(outputs)
 
 
+def ensure_pynvml_compat() -> None:
+    try:
+        import pynvml  # type: ignore
+    except Exception:
+        return
+
+    if hasattr(pynvml, "nvmlDeviceGetCudaComputeCapability"):
+        return
+
+    def _compat_nvml_device_get_cuda_compute_capability(handle):
+        try:
+            device_index = pynvml.nvmlDeviceGetIndex(handle)
+        except Exception:
+            device_index = torch.cuda.current_device()
+        major, minor = torch.cuda.get_device_capability(device_index)
+        return int(major), int(minor)
+
+    pynvml.nvmlDeviceGetCudaComputeCapability = _compat_nvml_device_get_cuda_compute_capability
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -40,6 +61,7 @@ def main():
     prompt_template = load_prompt("intellect")
 
     # Load model
+    ensure_pynvml_compat()
     llm = LLM(
         model=args.model,
         trust_remote_code=True,
